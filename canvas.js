@@ -50,6 +50,13 @@ function canvasCenter() {
     return [width/2, height/2]
 }
 
+class Point {
+    constructor(x, y) {
+        this.x = x
+        this.y = y
+    }
+}
+
 class Rect {
 
     static allRects = []
@@ -147,7 +154,7 @@ class Rect {
     }
 
     pos() {
-        return {"x": this.x, "y": this.y}
+        return new Point(this.x, this.y)
     }
 
     repos(x, y) {
@@ -195,35 +202,38 @@ class Rect {
 
 class Poly {
     constructor(points, {color}={}) {
+        points.forEach((e, i, arr) => {
+            if (Array.isArray(e)) {
+                arr[i] = new Point(...e)
+            }
+        })
         this.points = points
         this.color = color == undefined ? "#000000" : color
     }
 
     translate(x, y) {
-        this.points.forEach((e) => {
-            e[0] += x
-            e[1] += y
+        this.points.forEach((e, i, arr) => {
+            arr[i] = new Point(e.x + x, e.y + y)
         })
     }
 
     reflect(slope, intercept) {
         if (slope == undefined || slope == Infinity) {
             this.points.forEach((e) => {
-                e[0] = 2*intercept - e[0]
+                e.x = 2*intercept - e.x
             })
         } else if (slope == 0) {
             this.points.forEach((e) => {
-                e[1] = 2*intercept - e[1]
+                e.y = 2*intercept - e.y
             })
         } else {
             slope = -1/slope
             var reciprocal = -1/slope
-            this.points.forEach((e) => {
-                var newIntercept = e[1] - reciprocal*e[0]
+            this.points.forEach((e, i, arr) => {
+                var newIntercept = e.y - reciprocal*e.x
                 var intersection = [(-newIntercept + intercept)/(-slope + reciprocal), (reciprocal*intercept - slope*newIntercept)/(-slope + reciprocal)]
-                var newPoint = [2*intersection[0] - e[0], 2*intersection[1] - e[1]]
-                e[0] = newPoint[0]
-                e[1] = newPoint[1]
+                var newPoint = [2*intersection[0] - e.x, 2*intersection[1] - e.y]
+                arr[i] = new Point(newPoint[0], newPoint[1])
             })
         }
     }
@@ -235,12 +245,16 @@ class Poly {
         })
     }
 
+    clone() {
+        return new Poly(this.points, {color: this.color})
+    }
+
     create() {
         ctx.strokeStyle = this.color
         ctx.fillStyle = this.color
         ctx.beginPath()
         this.points.forEach((e) => {
-            ctx.lineTo(e[0], e[1])
+            ctx.lineTo(e.x, e.y)
         })
         ctx.closePath()
         ctx.fill()
@@ -256,6 +270,7 @@ class Line extends Poly {
     }
 
     create() {
+        //console.log(this.points[0], this.points[1])
         this.points = [this.points[0], this.points[1]]
         super.create()
     }
@@ -271,7 +286,7 @@ function events() {
 }
 
 rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a", fillColor: "#32CD32", outLine: 0})
-polygon = new Poly([[100, 100], [150, 150], [100, 200]], {color: "#32CD32"})
+//polygon = new Poly([[100, 100], [150, 150], [100, 200]], {color: "#32CD32"})
 line = new Line([10, 10], [70, 80], {color: "#0000FF"})
 
 background = "#000000"
