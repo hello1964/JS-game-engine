@@ -37,17 +37,15 @@ function end() {
     clicked = false
 }
 
-var mousePos = {"x": 0, "y": 0}
-function getMousePos(event) {
-    var rect = canvas.getBoundingClientRect()
-    mousePos = {
-        "x": event.clientX - rect.left,
-        "y": event.clientY - rect.top,
+function sigma(start, stop, func) {
+    var list = []
+    for (var i = start; i!=stop; i++) {
+        list.push(func(i))
     }
-}
-
-function canvasCenter() {
-    return [width/2, height/2]
+    list.reduce((a, b) => {
+        return a+b
+    })
+    return list[0]
 }
 
 class Point {
@@ -55,6 +53,115 @@ class Point {
         this.x = x
         this.y = y
     }
+
+    translate(x, y) {
+        this.x += x
+        this.y += y
+    }
+
+    reflect(slope, intercept) {
+        if (slope == undefined || slope == Infinity) {
+            this.x = 2*intercept - this.x
+        } else if (slope == 0) {
+            this.y = 2*intercept - this.y
+        } else {
+            slope = -1/slope
+            var reciprocal = -1/slope
+            var newIntercept = this.y - reciprocal*this.x
+            var intersection = [(-newIntercept + intercept)/(-slope + reciprocal), (reciprocal*intercept - slope*newIntercept)/(-slope + reciprocal)]
+            this.x, this.y = 2*intersection[0] - this.x, 2*intersection[1] - this.y
+        }
+    }
+
+    scale(x, y, scaleFactor) {
+        this.x = x - (x-this.x)*scaleFactor
+        this.y = y - (y-this.y)*scaleFactor
+    }
+
+    draw() {
+        ctx.lineTo(this.x, this.y)
+    }
+}
+
+class Arc {
+    constructor(x1, y1, x2, y2, radius) {
+        this.point1 = new Point(x1, y1)
+        this.point2 = new Point(x2, y2)
+        this.radius = radius
+    }
+
+    translate(x, y) {
+        this.point1.translate(x, y)
+        this.point2.translate(x, y)
+    }
+
+    reflect(slope, intercept) {
+        this.point1.reflect(slope, intercept)
+        this.point2.reflect(slope, intercept)
+    }
+
+    scale(x, y, scaleFactor) {
+        this.point1.scale(x, y, scaleFactor)
+        this.point2.scale(x, y, scaleFactor)
+    }
+
+    draw() {
+        ctx.arcTo(this.point1.x, this.point1.y, this.point2.x, this.point2.y, this.radius)
+    }
+}
+
+class Ellipse {
+    constructor(x, y, radiusX, radiusY, rotation, startAngle, endAngle) {
+        this.x = x
+        this.y = y
+        this.radiusX = radiusX
+        this.radiusY = radiusY
+        this.rotation = rotation
+        this.startAngle = startAngle
+        this.endAngle = endAngle
+    }
+
+    translate(x, y) {
+        this.x.translate(x, y)
+        this.y.translate(x, y)
+    }
+
+    reflect(slope, intercept) {
+        this.x.reflect(slope, intercept)
+        this.y.reflect(slope, intercept)
+    }
+
+    scale(x, y, scaleFactor) {
+        this.x.scale(x, y, scaleFactor)
+        this.y.scale(x, y, scaleFactor)
+    }
+
+    draw() {
+        ctx.ellipse(this.x, this.y, this.radiusX, this.radiusY, this.rotation, this.startAngle, this.endAngle, false)
+    }
+}
+
+var mousePos = new Point(0, 0)
+function getMousePos(event) {
+    var rect = canvas.getBoundingClientRect()
+    mousePos = new Point(event.clientX - rect.left, event.clientY - rect.top)
+}
+
+function canvasCenter() {
+    return new Point(width/2, height/2)
+}
+
+function createTemp(color, startPoint, func) {
+    ctx.strokeStyle = color
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.moveTo(startPoint.x, startPoint.y)
+    func()
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.strokeStyle = "#000000"
+    ctx.fillStyle = "#000000"
 }
 
 class Rect {
@@ -213,29 +320,23 @@ class Poly {
 
     translate(x, y) {
         this.points.forEach((e, i, arr) => {
-            arr[i] = new Point(e.x + x, e.y + y)
+            e.translate(x, y)
+            arr[i] = e
         })
     }
 
     reflect(slope, intercept) {
-        if (slope == undefined || slope == Infinity) {
-            this.points.forEach((e) => {
-                e.x = 2*intercept - e.x
-            })
-        } else if (slope == 0) {
-            this.points.forEach((e) => {
-                e.y = 2*intercept - e.y
-            })
-        } else {
-            slope = -1/slope
-            var reciprocal = -1/slope
-            this.points.forEach((e, i, arr) => {
-                var newIntercept = e.y - reciprocal*e.x
-                var intersection = [(-newIntercept + intercept)/(-slope + reciprocal), (reciprocal*intercept - slope*newIntercept)/(-slope + reciprocal)]
-                var newPoint = [2*intersection[0] - e.x, 2*intersection[1] - e.y]
-                arr[i] = new Point(newPoint[0], newPoint[1])
-            })
-        }
+        this.points.forEach((e, i, arr) => {
+            e.reflect(slope, intercept)
+            arr[i] = e
+        })
+    }
+
+    scale(x, y, scaleFactor) {
+        this.points.forEach((e, i, arr) => {
+            e.scale(x, y, scaleFactor)
+            arr[i] = e
+        })
     }
 
     rotate(originX, originY, degrees) {
@@ -245,35 +346,164 @@ class Poly {
         })
     }
 
+    get xVals() {
+        var newList = []
+        this.points.forEach((e) => {
+            newList.push(e.x)
+        })
+        return newList
+    }
+
+    get yVals() {
+        var newList = []
+        this.points.forEach((e) => {
+            newList.push(e.y)
+        })
+        return newList
+    }
+
+    get center() {
+        var x = Math.min(...this.xVals)
+        var y = Math.min(...this.yVals)
+        var width = Math.max(...this.xVals) - x
+        var height = Math.max(...this.yVals) - y
+
+        return new Rect(x, y, width, height).center
+    }
+
     clone() {
         return new Poly(this.points, {color: this.color})
     }
 
     create() {
-        ctx.strokeStyle = this.color
-        ctx.fillStyle = this.color
-        ctx.beginPath()
-        this.points.forEach((e) => {
-            ctx.lineTo(e.x, e.y)
+        createTemp(this.color, this.points[0], () => {
+            this.points.forEach((e) => {
+                e.draw()
+            })
         })
-        ctx.closePath()
-        ctx.fill()
-        ctx.stroke()
-        ctx.strokeStyle = "#000000"
-        ctx.fillStyle = "#000000"
     }
 }
 
-class Line extends Poly {
-    constructor(startPoint, endPoint, {color}={}) {
-        super([startPoint, endPoint], {color: color})
+class NonPoly {
+    constructor(points, {color}={}) {
+        points.forEach((e, i, arr) => {
+            if (Array.isArray(e)) {
+                arr[i] = new Point(...e)
+            }
+        })
+        this.points = points
+        this.color = color == undefined ? "#FFFFFF" : color
+    }
+
+    translate(x, y) {
+        this.points.forEach((e, i, arr) => {
+            e.translate(x, y)
+            arr[i] = e
+        })
+    }
+
+    reflect(slope, intercept) {
+        this.points.forEach((e, i , arr) => {
+            e.reflect(slope, intercept)
+            arr[i] = e
+        })
+    }
+
+    scale(x, y, scaleFactor) {
+        this.points.forEach((e, i, arr) => {
+            e.scale(x, y, scaleFactor)
+            arr[i] = e
+        })
     }
 
     create() {
-        //console.log(this.points[0], this.points[1])
-        this.points = [this.points[0], this.points[1]]
-        super.create()
+        createTemp(this.color, this.points[0], () => {
+            this.points.forEach((e) => {
+                e.draw()
+            })
+        })
     }
+}
+
+class Line {
+    constructor(startPoint, endPoint, {color}={}) {
+        this.startPoint = Array.isArray(startPoint) ? new Point(startPoint[0], startPoint[1]) : startPoint
+        this.endPoint = Array.isArray(endPoint) ? new Point(startPoint[0], endPoint[1]) : endPoint
+        this.color = color == undefined ? "#000000" : color
+    }
+
+    translate(x, y) {
+        this.startPoint.translate(x, y)
+        this.endPoint.translate(x, y)
+    }
+
+    reflect(slope, intercept) {
+        this.startPoint.reflect(slope, intercept)
+        this.endPoint.reflect(slope, intercept)
+    }
+
+    scale(x, y, scaleFactor) {
+        this.startPoint.scale(x, y, scaleFactor)
+        this.endPoint.scale(x, y, scaleFactor)
+    }
+
+    get midPoint() {
+        return new Point((startPoint.x + endPoint.x)/2, (startPoint.y + endPoint.y)/2)
+    }
+
+    get length() {
+        return Math.sqrt((endPoint.x - startPoint.x)**2 + (endPoint.y - startPoint.y)**2)
+    }
+
+    get slope() {
+        return (this.endPoint.y - this.startPoint.y)/(this.endPoint.x - this.startPoint.x)
+    }
+
+    create() {
+        createTemp(this.color, this.startPoint, () => {
+            this.startPoint.draw()
+            this.endPoint.draw()
+        })
+    }
+}
+
+class Circle {
+    constructor(x, y, radius, {color}={}) {
+        this.center = new Point(x, y)
+        this.radius = radius
+        this.color = color == undefined ? "#000000" : color
+    }
+
+    translate(x, y) {
+        this.center.translate(x, y)
+    }
+
+    reflect(slope, intercept) {
+        this.center.reflect(slope, intercept)
+    }
+
+    scale(x, y, scaleFactor) {
+        this.center.scale(x, y, scaleFactor)
+    }
+
+    get diameter() {
+        return this.radius*2
+    }
+
+    get circumference() {
+        return 2*Math.PI*this.radius
+    }
+
+    get area() {
+        return Math.PI*r**2
+    }
+
+    create() {
+        createTemp(this.color, this.center, () => {
+            ctx.arc(this.center.x, this.center.y, this.radius, 0, (Math.PI/180)*360, false)
+        })
+    }
+
 }
 
 var keys = {}
@@ -285,25 +515,31 @@ function events() {
 
 }
 
-rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a", fillColor: "#32CD32", outLine: 0})
-//polygon = new Poly([[100, 100], [150, 150], [100, 200]], {color: "#32CD32"})
-line = new Line([10, 10], [70, 80], {color: "#0000FF"})
+rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a", fillColor: "#32CD32", outLine: 20})
+polygon = new Poly([[100, 100], [150, 150], [100, 200], [50, 150]], {color: "#32CD32"})
+line = new Line([0, 0], [500, 500], {color: "#0000FF"})
+side = new NonPoly([[10, 10], [50, 10], new Ellipse(50, 55, 20, 45, 0, 0, Math.PI*2), [50, 100], [10, 100]], {Color: "#FFFFFF"})
+ellipse = new NonPoly([new Ellipse(50, 45, 20, 45, 0, 0, Math.PI*2)])
+circle = new Circle(10, 10, 20, {color: "#ff0000"})
 
 background = "#000000"
 setInterval(() => {
     run()
 
     if (keys.w) {
-        rectangle.translate(0, -4)
+        polygon.translate(0, -4)
     }
     if (keys.s) {
-        rectangle.translate(0, 4)
+        polygon.translate(0, 4)
     }
     if (keys.d) {
-        rectangle.translate(4, 0)
+        polygon.translate(4, 0)
     }
     if (keys.a) {
-        rectangle.translate(-4, 0)
+        polygon.translate(-4, 0)
+    }
+    if (keys.c) {
+        console.log(polygon.center)
     }
     if (rectangle.mouseOn() && clicked) {
         rectangle.setFromPoint(...rectangle.center, mousePos.x, mousePos.y)
@@ -313,10 +549,14 @@ setInterval(() => {
         rectangle.setScaleWidth(100)
     }
     if (clicked) {
-        line.reflect(undefined, 250)
+        line.reflect(Infinity, 250)
     }
+    circle.center = mousePos
 
-    rectangle.create()
-    line.create()
+    polygon.create()
+    //rectangle.create()
+    //line.create()
+    side.create()
+    circle.create()
     end()
 }, INTERVAL*1000)
