@@ -48,6 +48,18 @@ function sigma(start, stop, func) {
     return list[0]
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function wait(milliseconds) {
+    const date = Date.now();
+    let currentDate = null;
+    do {
+        currentDate = Date.now();
+    } while (currentDate - date < milliseconds);
+}
+
 class Point {
     constructor(x, y) {
         this.x = x
@@ -76,6 +88,10 @@ class Point {
     scale(x, y, scaleFactor) {
         this.x = x - (x-this.x)*scaleFactor
         this.y = y - (y-this.y)*scaleFactor
+    }
+
+    get array() {
+        return [this.x, this.y]
     }
 
     draw() {
@@ -506,6 +522,54 @@ class Circle {
 
 }
 
+class ImageObject {
+    constructor(x, y, image) {
+        this.point = new Point(x, y)
+        this.image = image
+        this.sWidth = image.width
+        this.sHeight = image.height
+        this.width = image.width
+        this.height = image.height
+    }
+
+    translate(x, y) {
+        this.point.translate(x, y)
+    }
+
+    setFromPoint(x1, y1, x2, y2) {
+        this.point.x += x2 - x1
+        this.point.y += y2 - y1
+    }
+
+    scale(x, y, scaleFactor) {
+        var rect = new Rect(...this.point.array, this.width, this.height)
+        rect.scale(x, y, scaleFactor)
+        this.point = new Point(rect.x, rect.y)
+        this.width = rect.width
+        this.height = rect.height
+    }
+
+    setScaleWidth(size) {
+        console.log(this.width, this.height)
+        this.scale(...this.center.array, size/this.width)
+        console.log(this.width, this.height)
+    }
+
+    setScaleHeight(size) {
+        this.scale(...this.center, size/this.height)
+    }
+
+    get center() {
+        return new Point(this.image.width/2+this.point.x, this.image.height/2+this.point.y)
+    }
+
+    create() {
+        createTemp("#000000", this.point, () => {
+            ctx.drawImage(this.image, 0, 0, this.sWidth, this.sHeight, this.point.x, this.point.y, this.width, this.height)
+        })
+    }
+}
+
 var keys = {}
 onkeydown = onkeyup = (e) => {
     keys[e.key] = e.type == "keydown"
@@ -521,22 +585,28 @@ line = new Line([0, 0], [500, 500], {color: "#0000FF"})
 side = new NonPoly([[10, 10], [50, 10], new Ellipse(50, 55, 20, 45, 0, 0, Math.PI*2), [50, 100], [10, 100]], {Color: "#FFFFFF"})
 ellipse = new NonPoly([new Ellipse(50, 45, 20, 45, 0, 0, Math.PI*2)])
 circle = new Circle(10, 10, 20, {color: "#ff0000"})
+raisinHeart = new Image()
+raisinHeart.onload = () => {
+    raisinHeart = new ImageObject(200, 200, raisinHeart)
+    raisinHeart.setScaleWidth(500)
+}
+raisinHeart.src = "https://cdn.discordapp.com/avatars/418893693106389024/aaed638ebdb3bfe2d4e1d3e7f9da62ef.png?size=256"
 
 background = "#000000"
 setInterval(() => {
     run()
 
     if (keys.w) {
-        polygon.translate(0, -4)
+        raisinHeart.translate(0, -4)
     }
     if (keys.s) {
-        polygon.translate(0, 4)
+        raisinHeart.translate(0, 4)
     }
     if (keys.d) {
-        polygon.translate(4, 0)
+        raisinHeart.translate(4, 0)
     }
     if (keys.a) {
-        polygon.translate(-4, 0)
+        raisinHeart.translate(-4, 0)
     }
     if (keys.c) {
         console.log(polygon.center)
@@ -553,10 +623,6 @@ setInterval(() => {
     }
     circle.center = mousePos
 
-    polygon.create()
-    //rectangle.create()
-    //line.create()
-    side.create()
-    circle.create()
+    raisinHeart.create()
     end()
 }, INTERVAL*1000)
