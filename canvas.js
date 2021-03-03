@@ -109,11 +109,19 @@ class Point {
         } else if (slope == 0) {
             this.y = 2*intercept - this.y
         } else {
-            slope = -1/slope
-            var reciprocal = -1/slope
-            var newIntercept = this.y - reciprocal*this.x
-            var intersection = [(-newIntercept + intercept)/(-slope + reciprocal), (reciprocal*intercept - slope*newIntercept)/(-slope + reciprocal)]
-            this.x, this.y = 2*intersection[0] - this.x, 2*intersection[1] - this.y
+            var reciporical = -1/slope
+            var newIntercept = Line.yIntercept(reciporical, this.x, this.y)
+            var a1 = -slope
+            var b1 = 1
+            var c1 = -intercept
+            var a2 = -reciporical
+            var b2 = 1
+            var c2 = -newIntercept
+
+            var pointOfIntersection = new Point((b1*c2 - b2*c1)/(a1*b2 - a2*b1), (a2*c1 - a1*c2)/(a1*b2 - a2*b1))
+            var finalPoint = Line.endPointFromMid(this, pointOfIntersection)
+            this.x = finalPoint.x
+            this.y = finalPoint.y
         }
     }
 
@@ -279,7 +287,7 @@ class Rect {
     }
 
     get fourCorners() {
-        return [new Point(this.point.x, this.point.y), new Point(this.point.x + this.width, this.point.y), new Point(this.point.x, this.point.y + this.height), new Point(this.point.x + this.width, this.point.y + this.height)]
+        return [new Point(this.point.x, this.point.y), new Point(this.point.x + this.width, this.point.y), new Point(this.point.x + this.width, this.point.y + this.height), new Point(this.point.x, this.point.y + this.height)]
     }
 
     onEdge() {
@@ -531,11 +539,17 @@ class Line {
         return Point.ccw(line1.startPoint, line2.startPoint, line2.endPoint) != Point.ccw(line1.endPoint, line2.startPoint, line2.endPoint) && Point.ccw(line1.startPoint, line1.endPoint, line2.startPoint) != Point.ccw(line1.startPoint, line1.endPoint, line2.endPoint)
     }
 
+    static endPointFromMid(startPoint, midPoint) {
+        return new Point(2*midPoint.x - startPoint.x, 2*midPoint.y - startPoint.y)
+    }
+
+    static yIntercept(slope, x, y) {
+        return y - slope*x
+    }
+
     constructor(startPoint, endPoint, {color}={}) {
-        this.startPoint = startPoint
-        this.endPoint = endPoint
-        if (Array.isArray(startPoint)) {this.startPoint = new Point(startPoint[0], startPoint[1])}
-        if (Array.isArray(endPoint)) {this.endPoint = new Point(endPoint[0], endPoint[1])}
+        this.startPoint = Point.arrayToPoint(startPoint)
+        this.endPoint = Point.arrayToPoint(endPoint)
         this.color = color == undefined ? "#000000" : color
     }
 
@@ -574,13 +588,12 @@ class Line {
         return (this.endPoint.y - this.startPoint.y)/(this.endPoint.x - this.startPoint.x)
     }
 
-    get intercept() {
+    get yIntercept() {
         return this.startPoint.y - this.slope*this.startPoint.x
     }
 
     create() {
         createTemp(this.color, this.startPoint, () => {
-            this.startPoint.draw()
             this.endPoint.draw()
         })
     }
@@ -626,6 +639,7 @@ class Circle {
         ctx.stroke()
         ctx.fill()
         ctx.fillStyle = "#000000"
+        ctx.strokeStyle = "#000000"
     }
 
 }
@@ -759,9 +773,13 @@ function events() {
 
 }
 
+var rSlope = 2
+var rIntercet = 0
+
 rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a"})
 polygon = new Poly([[100, 100], [150, 150], [100, 200], [50, 150]], {color: "#32CD32"})
-line = new Line([0, 0], [500, 500], {color: "#0000FF"})
+polygon.scale(...polygon.center.array, 2)
+line = new Line([0, rIntercet], [2000, 2000*rSlope + rIntercet], {color: "#0000FF"})
 line2 = new Line([0, 0], [500, 500], {color: "#0000FF"})
 side = new NonPoly([[10, 10], [50, 10], new Ellipse(50, 55, 20, 45, 0, 0, Math.PI*2), [50, 100], [10, 100]], {Color: "#FFFFFF"})
 ellipse = new NonPoly([new Ellipse(50, 45, 20, 45, 0, 0, Math.PI*2)])
@@ -777,7 +795,7 @@ raisinHeart.onload = () => {
 raisinHeart.src = "https://cdn.discordapp.com/avatars/418893693106389024/aaed638ebdb3bfe2d4e1d3e7f9da62ef.png?size=256"
 
 function transSprite() {
-    return roundRect
+    return polygon
 }
 
 background = "#FFFFFF"
@@ -805,10 +823,11 @@ setInterval(() => {
         rectangle.setScaleWidth(100)
     }
     if (clicked) {
-        console.log(rectangle.mouseOn())
+        polygon.reflect(rSlope, rIntercet)
     }
     line2.endPoint = mousePos
 
-    rectangle.create()
+    line.create()
+    polygon.create()
     end()
 }, INTERVAL*1000)
