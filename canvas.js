@@ -25,16 +25,22 @@ function onResize() {
 }
 
 var background = "#ffffff"
+var clicked = false
+var keys = {}
+var pKeys = {}
 function run() {
+    pKeys = keys
     ctx.fillStyle = background
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.stroke()
     ctx.fillStyle = "#000000"
 }
 
-var clicked = false
 function end() {
     clicked = false
+}
+onkeydown = onkeyup = (e) => {
+    keys[e.key] = e.type == "keydown"
 }
 
 function sigma(start, stop, func) {
@@ -61,6 +67,27 @@ function wait(milliseconds) {
 }
 
 class Point {
+    static ccw(a, b, c) {
+        return (c.y - a.y)*(b.x - a.x) > (b.y - a.y)*(c.x - a.x)
+    }
+
+    static collinear(a, b, c) {
+        return a.x == b.x == c.x || a.y == b.y == c.y
+    }
+
+    static arrayToPoint(arr) {
+        var newPoint = arr
+        if (Array.isArray(arr)) {
+            if (arr.length >= 2) {
+                newPoint = new Point(arr[0], arr[1])
+                if (arr.length > 2) {console.warn("The list you provided was over 2 items long")}
+            } else {
+                throw "Invalid array. Cannot create a point because it does not contain enough information."
+            }
+        }
+        return newPoint
+    }
+
     constructor(x, y) {
         this.x = x
         this.y = y
@@ -69,6 +96,11 @@ class Point {
     translate(x, y) {
         this.x += x
         this.y += y
+    }
+
+    setFromPoint(x1, y1, x2, y2) {
+        this.x += x2 - x1
+        this.y += y2 - y1
     }
 
     reflect(slope, intercept) {
@@ -174,24 +206,62 @@ function createTemp(color, startPoint, func) {
     ctx.moveTo(startPoint.x, startPoint.y)
     func()
     ctx.closePath()
-    ctx.fill()
     ctx.stroke()
+    ctx.fill()
     ctx.strokeStyle = "#000000"
     ctx.fillStyle = "#000000"
+}
+
+class MoveTo {
+    constructor(x, y, speed) {
+        this.point = new Point(x, y)
+        this.speed = Math.abs(speed)
+    }
+
+    run(point) {
+        var line = new Line(point, this.point)
+        var xDir = point.x > this.point.x ? -1 : 1
+        var yDir = point.y > this.point.y ? -1 : 1
+        var slope = Math.abs(line.slope)
+        if (typeof slope != "number") {return this.point}
+        var newpoint = new Point(point.x + this.speed*xDir, point.y + slope*this.speed*yDir)
+        if (!line.hasPoint) {newpoint = this.point}
+        return newpoint
+    }
+
+    check(point) {
+        return point == this.point
+    }
+}
+
+class Animation {
+    constructor(actions) {
+        this.actions = actions
+        this.cycle = 0
+        this.semiCycle = 0
+    }
+
+    run(points) {
+        if (this.cycle > this.actions.length) {return points}
+        var newPoints = []
+        points.forEach((e) => {
+            newPoints.push(this.actions[this.cycle].run(e))
+        })
+        this.cycle += Number(this.actions[this.cycle].check(points[0]))
+        return newPoints
+    }
 }
 
 class Rect {
 
     static allRects = []
 
-    constructor(x, y, width, height, {color, fillColor, outLine}={}) {
-        this.x = x
-        this.y = y
+    constructor(x, y, width, height, {color, animation}={}) {
+        this.point = new Point(x, y)
         this.width = width
         this.height = height
         this.color = color == undefined ? "#000000" : color
-        this.fillColor = fillColor == undefined ? null : fillColor
-        this.outLine = outLine == undefined ? 0 : outLine
+        this.animation = animation == undefined ? null : animation
 
         Rect.allRects.push(this)
     }
@@ -201,17 +271,19 @@ class Rect {
     }
 
     twoCorners(point1, point2) {
-        this.x, this.y = point1[0], point1[1]
-        this.width = point2[0] - point1[0]
-        this.height = point2[1] - point1[1]
+        point1 = Point.arrayToPoint(point1)
+        point2 = Point.arrayToPoint(point2)
+        this.point.x, this.point.y = point1.x, point1.y
+        this.width = point2.x - point1.x
+        this.height = point2.y - point1.y
     }
 
     get fourCorners() {
-        return [[this.x, this.y], [this.x + this.width, this.y], [this.x, this.y + this.height], [this.x + this.width, this.y + this.height]]
+        return [new Point(this.point.x, this.point.y), new Point(this.point.x + this.width, this.point.y), new Point(this.point.x, this.point.y + this.height), new Point(this.point.x + this.width, this.point.y + this.height)]
     }
 
     onEdge() {
-        if (this.x <= 0 || this.y <= 0 || this.x + this.width >= canvas.offsetWidth || this.y + this.height >= canvas.offsetHeight) {
+        if (this.point.x <= 0 || this.point.y <= 0 || this.point.x + this.width >= canvas.offsetWidth || this.point.y + this.height >= canvas.offsetHeight) {
             return true
         } else {
             return false
@@ -219,13 +291,13 @@ class Rect {
     }
 
     whatEdge() {
-        if (this.x <= 0) {
+        if (this.point.x <= 0) {
             return "left"
-        } else if (this.y <= 0) {
+        } else if (this.point.y <= 0) {
             return "top"
-        } else if (this.x + this.width >= canvas.offsetWidth) {
+        } else if (this.point.x + this.width >= canvas.offsetWidth) {
             return "right"
-        } else if (this.y + this.height >= canvas.offsetHeight) {
+        } else if (this.point.y + this.height >= canvas.offsetHeight) {
             return "bottom"
         } else {
             return null
@@ -233,93 +305,79 @@ class Rect {
     }
 
     get center() {
-        return [this.x + this.width/2, this.y + this.height/2]
+        return new Point(this.point.x + this.width/2, this.point.y + this.height/2)
     }
 
     scale(x, y, scaleFactor) {
-        var width = x - ((x-(this.x + this.width))*scaleFactor)
-        var height = y - ((y-(this.y + this.height))*scaleFactor)
-        this.x = x - ((x-this.x)*scaleFactor)
-        this.y = y - ((y-this.y)*scaleFactor)
-        this.width = width - this.x
-        this.height = height - this.y
+        var width = x - ((x-(this.point.x + this.width))*scaleFactor)
+        var height = y - ((y-(this.point.y + this.height))*scaleFactor)
+        this.point.scale(x, y, scaleFactor)
+        this.width = width - this.point.x
+        this.height = height - this.point.y
     }
 
     setScaleWidth(size) {
-        this.scale(...this.center, size/this.width)
+        this.scale(...this.center.array, size/this.width)
     }
 
     setScaleHeight(size) {
-        this.scale(...this.center, size/this.height)
+        this.scale(...this.center.array, size/this.height)
     }
 
     setFromPoint(x1, y1, x2, y2) {
-        this.x += x2 - x1
-        this.y += y2 - y1
-    }
-    
-    reflect(slope, intercept) {
-        var newSlope = -slope*(1/slope)
-        var points = [[this.x, this.y], [this.x + this.width, this.y], [this.x, this.y + this.height], [this.x + this.width, this.y + this.height]]
-        var newPoints = []
-        points.forEach((e) => {
-            var newIntercept = e[1] / (newSlope*e[0])
-            var x = (newIntercept - intercept) / (newSlope - slope)
-            var y = newSlope*x + newIntercept
-            newPoints.push([2*x - e[0], 2*y-e[1]])
-        })
-        this.twoCorners(points[0], points[3])
+        this.point.setFromPoint(x1, y1, x2, y2)
     }
 
     translate(x, y) {
-        this.x += x
-        this.y += y
-    }
-
-    pos() {
-        return new Point(this.x, this.y)
-    }
-
-    repos(x, y) {
-        this.x = x
-        this.y = y
-    }
-
-    resize(width, height) {
-        this.width = width
-        this.height = height
+        this.point.translate(x, y)
     }
 
     mouseOn() {
-        if (mousePos.x >= this.x && mousePos.x <= this.x + this.width && mousePos.y >= this.y && mousePos.y <= this.y + this.height) {
-            return true
-        }
-        return false
+        return this.toPoly().mouseOn()
     }
 
     touchingRects() {
         var listOfRects = []
         Rect.allRects.forEach((e) => {
-            if (e.x >= this.x && e.x + e.width <= this.x + this.width && e.y >= this.y && e.y + e.height <= this.y + this.height) {
+            if (e.x >= this.point.x && e.point.x + e.width <= this.point.x + this.width && e.point.y >= this.point.y && e.point.y + e.height <= this.point.y + this.height) {
                 listOfRects.push(e)
             }
         })
         return listOfRects
     }
 
+    animate() {
+        this.setFromPoint(...this.center.array, ...this.animation.run([this.center])[0].array)
+    }
+
     create() {
         ctx.fillStyle = this.color
-        ctx.fillRect(this.x, this.y, this.width, this.height)
-        if (this.fillColor == null) {
-            ctx.fillStyle = background
-        } else {
-            ctx.fillStyle = this.fillColor
-        }
-        if (this.outLine > 0) {
-            ctx.fillRect(this.x + this.outLine, this.y + this.outLine, this.width - this.outLine*2, this.height - this.outLine*2)
-        }
+        ctx.fillRect(this.point.x, this.point.y, this.width, this.height)
         ctx.stroke()
         ctx.fillStyle = "#000000"
+    }
+}
+
+class RoundRect extends Rect {
+    constructor(x, y, width, height, radius, {color}={}) {
+        super(x, y, width, height, {color})
+        this.radius = radius
+    }
+
+    scale(x, y, scaleFactor) {
+        super.scale(x, y, scaleFactor)
+        this.radius *= scaleFactor
+    }
+
+    create() {
+        var baseRect = new Rect(this.point.x + this.radius, this.point.y + this.radius, this.width - this.radius*2, this.height - this.radius*2, {color: this.color})
+        new Circle(baseRect.point.x, baseRect.point.y, this.radius, {color: this.color}).create()
+        new Circle(baseRect.point.x, baseRect.point.y + baseRect.height, this.radius, {color: this.color}).create()
+        new Circle(baseRect.point.x + baseRect.width, baseRect.point.y, this.radius, {color: this.color}).create()
+        new Circle(baseRect.point.x + baseRect.width, baseRect.point.y + baseRect.height, this.radius, {color: this.color}).create()
+        baseRect.create()
+        new Rect(baseRect.point.x, this.point.y - 1, baseRect.width, this.height + 2, {color: this.color}).create()
+        new Rect(this.point.x - 1, baseRect.point.y, this.width + 2, baseRect.height, {color: this.color}).create()
     }
 }
 
@@ -332,6 +390,19 @@ class Poly {
         })
         this.points = points
         this.color = color == undefined ? "#000000" : color
+    }
+
+    hasPoint(x, y) {
+        var line = new Line([x, y], [Number.MAX_VALUE, y])
+        var totalIntersections = 0
+        this.sides.forEach((e) => {
+            totalIntersections += Number(Line.intersecting(e, line))
+        })
+        return totalIntersections % 2 != 0
+    }
+
+    mouseOn() {
+        return this.hasPoint(mousePos.x, mousePos.y)
     }
 
     translate(x, y) {
@@ -360,6 +431,20 @@ class Poly {
             e[0] = originX*(originX*e[0]) + Math.cos(degrees)*(e[0]-originY*(originX*e[0])) + Math.sin(degrees)*(originY*e[0])
             e[1] = originY*(originY*e[1]) + Math.cos(degrees)*(e[1]-originY*(originY*e[1])) + Math.sin(degrees)*(originY*e[1])
         })
+    }
+
+    get sides() {
+        var sideList = []
+        this.points.forEach((e, i, arr) => {
+            if (i == arr.length - 1) {
+                if (e != arr[0]) {
+                    sideList.push(new Line(e, arr[0]))
+                }
+            } else {
+                sideList.push(new Line(e, arr[i + 1]))
+            }
+        })
+        return sideList
     }
 
     get xVals() {
@@ -442,9 +527,15 @@ class NonPoly {
 }
 
 class Line {
+    static intersecting(line1, line2) {
+        return Point.ccw(line1.startPoint, line2.startPoint, line2.endPoint) != Point.ccw(line1.endPoint, line2.startPoint, line2.endPoint) && Point.ccw(line1.startPoint, line1.endPoint, line2.startPoint) != Point.ccw(line1.startPoint, line1.endPoint, line2.endPoint)
+    }
+
     constructor(startPoint, endPoint, {color}={}) {
-        this.startPoint = Array.isArray(startPoint) ? new Point(startPoint[0], startPoint[1]) : startPoint
-        this.endPoint = Array.isArray(endPoint) ? new Point(startPoint[0], endPoint[1]) : endPoint
+        this.startPoint = startPoint
+        this.endPoint = endPoint
+        if (Array.isArray(startPoint)) {this.startPoint = new Point(startPoint[0], startPoint[1])}
+        if (Array.isArray(endPoint)) {this.endPoint = new Point(endPoint[0], endPoint[1])}
         this.color = color == undefined ? "#000000" : color
     }
 
@@ -463,6 +554,14 @@ class Line {
         this.endPoint.scale(x, y, scaleFactor)
     }
 
+    hasPoint(x, y) {
+        return this.slope*x + b == y && x >= this.startPoint.x && x <= this.endPoint.x
+    }
+
+    intersecting(line) {
+
+    }
+
     get midPoint() {
         return new Point((startPoint.x + endPoint.x)/2, (startPoint.y + endPoint.y)/2)
     }
@@ -473,6 +572,10 @@ class Line {
 
     get slope() {
         return (this.endPoint.y - this.startPoint.y)/(this.endPoint.x - this.startPoint.x)
+    }
+
+    get intercept() {
+        return this.startPoint.y - this.slope*this.startPoint.x
     }
 
     create() {
@@ -515,11 +618,71 @@ class Circle {
     }
 
     create() {
-        createTemp(this.color, this.center, () => {
-            ctx.arc(this.center.x, this.center.y, this.radius, 0, (Math.PI/180)*360, false)
-        })
+        ctx.fillStyle = this.color
+        ctx.strokeStyle = this.color
+        ctx.beginPath
+        ctx.moveTo(this.center.x, this.center.y)
+        ctx.arc(this.center.x, this.center.y, this.radius, 0, (Math.PI/180)*360, false)
+        ctx.stroke()
+        ctx.fill()
+        ctx.fillStyle = "#000000"
     }
 
+}
+
+class TextObject {
+    constructor(x, y, text, size, {color, font}={}) {
+        this.point = new Point(x, y)
+        this.text = text
+        this.size = size
+        this.color = color == undefined ? "#000000" : color
+        this.font = font == undefined ? "arial" : font
+    }
+
+    translate(x, y) {
+        this.point.translate(x, y)
+    }
+
+    scale(slope, scaleFactor) {
+        var rect = new Rect(this.point.x, this.point.y, this.width, this.height)
+        rect.scale(slope, scaleFactor)
+        this.point = new Point(rect.x, rect.y)
+        this.size = rect.height
+    }
+
+    setScaleWidth(size) {
+        this.scale(...this.center.array, size/this.width)
+    }
+
+    setScaleHeight(size) {
+        this.scale(...this.center.array, size/this.height)
+    }
+
+    setFromPoint(x1, y1, x2, y2) {
+        this.point.x += x2 - x1
+        this.point.y += y2 - y1
+    }
+
+    get width() {
+        ctx.font = `${size}px ${this.font}`
+        ctx.fillColor = this.color
+        return ctx.measureText(this.text).width
+    }
+
+    get height() {
+        return this.size
+    }
+
+    get center() {
+        return new Point(this.point.x + this.width/2, this.point.y + this.height/2)
+    }
+
+    create() {
+        ctx.font = `${this.size}px ${this.font}`
+        ctx.fillStyle = this.color
+        ctx.textBaseline = "hanging"
+        ctx.fillText(this.text, this.point.x, this.point.y)
+    }
 }
 
 class ImageObject {
@@ -530,6 +693,8 @@ class ImageObject {
         this.sHeight = image.height
         this.width = image.width
         this.height = image.height
+        this.mirroredV = false
+        this.mirroredH = false
     }
 
     translate(x, y) {
@@ -550,13 +715,23 @@ class ImageObject {
     }
 
     setScaleWidth(size) {
-        console.log(this.width, this.height)
         this.scale(...this.center.array, size/this.width)
-        console.log(this.width, this.height)
     }
 
     setScaleHeight(size) {
-        this.scale(...this.center, size/this.height)
+        this.scale(...this.center.array, size/this.height)
+    }
+
+    rotate(deg) {
+        this.image.style.transform = `rotate(${deg}deg)`
+    }
+
+    mirrorVertical() {
+        this.mirroredV = !this.mirroredV
+    }
+
+    mirrorHorizontal() {
+        this.mirroredH = !this.mirroredH
     }
 
     get center() {
@@ -564,65 +739,76 @@ class ImageObject {
     }
 
     create() {
-        createTemp("#000000", this.point, () => {
-            ctx.drawImage(this.image, 0, 0, this.sWidth, this.sHeight, this.point.x, this.point.y, this.width, this.height)
-        })
+        ctx.save()
+        ctx.translate(...this.center.array)
+        ctx.scale(this.mirroredV ? -1 : 1, this.mirroredH ? -1 : 1)
+        var effectX = 0
+        var effectY = 0
+        if (this.mirroredV) {
+            effectX = -this.width
+        }
+        if (this.mirroredH) {
+            effectY = -this.height
+        }
+        ctx.drawImage(this.image, 0, 0, this.sWidth, this.sHeight, effectX, effectY, this.width, this.height)
+        ctx.restore()
     }
-}
-
-var keys = {}
-onkeydown = onkeyup = (e) => {
-    keys[e.key] = e.type == "keydown"
 }
 
 function events() {
 
 }
 
-rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a", fillColor: "#32CD32", outLine: 20})
+rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a"})
 polygon = new Poly([[100, 100], [150, 150], [100, 200], [50, 150]], {color: "#32CD32"})
 line = new Line([0, 0], [500, 500], {color: "#0000FF"})
+line2 = new Line([0, 0], [500, 500], {color: "#0000FF"})
 side = new NonPoly([[10, 10], [50, 10], new Ellipse(50, 55, 20, 45, 0, 0, Math.PI*2), [50, 100], [10, 100]], {Color: "#FFFFFF"})
 ellipse = new NonPoly([new Ellipse(50, 45, 20, 45, 0, 0, Math.PI*2)])
 circle = new Circle(10, 10, 20, {color: "#ff0000"})
+text = new TextObject(5, 10, "Ha Ayuj, you could never display text like I can", 70, {color: "#FFFFFF"})
+roundRect = new RoundRect(0, 0, 100, 50, 25, {color: "#FF0000"})
+
 raisinHeart = new Image()
 raisinHeart.onload = () => {
-    raisinHeart = new ImageObject(200, 200, raisinHeart)
+    raisinHeart = new ImageObject(0, 0, raisinHeart)
     raisinHeart.setScaleWidth(500)
 }
 raisinHeart.src = "https://cdn.discordapp.com/avatars/418893693106389024/aaed638ebdb3bfe2d4e1d3e7f9da62ef.png?size=256"
 
-background = "#000000"
+function transSprite() {
+    return roundRect
+}
+
+background = "#FFFFFF"
 setInterval(() => {
     run()
 
     if (keys.w) {
-        raisinHeart.translate(0, -4)
+        transSprite().translate(0, -4)
     }
     if (keys.s) {
-        raisinHeart.translate(0, 4)
+        transSprite().translate(0, 4)
     }
     if (keys.d) {
-        raisinHeart.translate(4, 0)
+        transSprite().translate(4, 0)
     }
     if (keys.a) {
-        raisinHeart.translate(-4, 0)
+        transSprite().translate(-4, 0)
     }
     if (keys.c) {
-        console.log(polygon.center)
+        console.log(rectangle.toPoly())
     }
-    if (rectangle.mouseOn() && clicked) {
-        rectangle.setFromPoint(...rectangle.center, mousePos.x, mousePos.y)
-    } else if (rectangle.mouseOn()) {
+    if (rectangle.mouseOn()) {
         rectangle.setScaleWidth(150)
     } else {
         rectangle.setScaleWidth(100)
     }
     if (clicked) {
-        line.reflect(Infinity, 250)
+        console.log(rectangle.mouseOn())
     }
-    circle.center = mousePos
+    line2.endPoint = mousePos
 
-    raisinHeart.create()
+    rectangle.create()
     end()
 }, INTERVAL*1000)
