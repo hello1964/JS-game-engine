@@ -36,9 +36,12 @@ function run() {
     ctx.fillStyle = "#000000"
 }
 
+var cycle = 0
 function end() {
+    cycle += 1
     clicked = false
 }
+
 onkeydown = onkeyup = (e) => {
     keys[e.key] = e.type == "keydown"
 }
@@ -111,14 +114,8 @@ class Point {
         } else {
             var reciporical = -1/slope
             var newIntercept = Line.yIntercept(reciporical, this.x, this.y)
-            var a1 = -slope
-            var b1 = 1
-            var c1 = -intercept
-            var a2 = -reciporical
-            var b2 = 1
-            var c2 = -newIntercept
 
-            var pointOfIntersection = new Point((b1*c2 - b2*c1)/(a1*b2 - a2*b1), (a2*c1 - a1*c2)/(a1*b2 - a2*b1))
+            var pointOfIntersection = new Point((-newIntercept + intercept)/(-slope - -reciporical), (reciporical*intercept - slope*newIntercept)/(-slope + reciporical))
             var finalPoint = Line.endPointFromMid(this, pointOfIntersection)
             this.x = finalPoint.x
             this.y = finalPoint.y
@@ -128,6 +125,14 @@ class Point {
     scale(x, y, scaleFactor) {
         this.x = x - (x-this.x)*scaleFactor
         this.y = y - (y-this.y)*scaleFactor
+    }
+
+    rotate(x, y, deg) {
+        deg = deg*Math.PI/180
+        deg*=-1
+        var newPoint = new Point((this.x - x)*Math.cos(deg)-(this.y - y)*Math.sin(deg), (this.x - x)*Math.sin(deg)+(this.y - y)*Math.cos(deg))
+        this.x = newPoint.x + x
+        this.y = newPoint.y + y
     }
 
     get array() {
@@ -190,6 +195,13 @@ class Ellipse {
     scale(x, y, scaleFactor) {
         this.x.scale(x, y, scaleFactor)
         this.y.scale(x, y, scaleFactor)
+    }
+
+    rotate(x, y, deg) {
+        var point = new Point(this.x, this.y)
+        point.rotate(x, y, deg)
+        this.x = point.x
+        this.y = point.y
     }
 
     draw() {
@@ -434,10 +446,10 @@ class Poly {
         })
     }
 
-    rotate(originX, originY, degrees) {
-        this.points.forEach((e) => {
-            e[0] = originX*(originX*e[0]) + Math.cos(degrees)*(e[0]-originY*(originX*e[0])) + Math.sin(degrees)*(originY*e[0])
-            e[1] = originY*(originY*e[1]) + Math.cos(degrees)*(e[1]-originY*(originY*e[1])) + Math.sin(degrees)*(originY*e[1])
+    rotate(x, y, deg) {
+        this.points.forEach((e, i, arr) => {
+            e.rotate(x, y, deg)
+            arr[i] = e
         })
     }
 
@@ -525,6 +537,13 @@ class NonPoly {
         })
     }
 
+    rotate(x, y, deg) {
+        this.points.forEach((e, i, arr) => {
+            e.rotate(x, y, deg)
+            arr[i] = e
+        })
+    }
+
     create() {
         createTemp(this.color, this.points[0], () => {
             this.points.forEach((e) => {
@@ -568,12 +587,13 @@ class Line {
         this.endPoint.scale(x, y, scaleFactor)
     }
 
-    hasPoint(x, y) {
-        return this.slope*x + b == y && x >= this.startPoint.x && x <= this.endPoint.x
+    rotate(x, y, deg) {
+        this.startPoint.rotate(x, y, deg)
+        this.endPoint.rotate(x, y, deg)
     }
 
-    intersecting(line) {
-
+    hasPoint(x, y) {
+        return this.slope*x + b == y && x >= this.startPoint.x && x <= this.endPoint.x
     }
 
     get midPoint() {
@@ -616,6 +636,10 @@ class Circle {
 
     scale(x, y, scaleFactor) {
         this.center.scale(x, y, scaleFactor)
+    }
+    
+    rotate(x, y, deg) {
+        this.center.rotate(x, y, deg)
     }
 
     get diameter() {
@@ -709,6 +733,7 @@ class ImageObject {
         this.height = image.height
         this.mirroredV = false
         this.mirroredH = false
+        this.angle = 0
     }
 
     translate(x, y) {
@@ -737,7 +762,7 @@ class ImageObject {
     }
 
     rotate(deg) {
-        this.image.style.transform = `rotate(${deg}deg)`
+        this.angle += deg
     }
 
     mirrorVertical() {
@@ -756,6 +781,7 @@ class ImageObject {
         ctx.save()
         ctx.translate(...this.center.array)
         ctx.scale(this.mirroredV ? -1 : 1, this.mirroredH ? -1 : 1)
+        //ctx.rotate(angle * Math.PI/180)
         var effectX = 0
         var effectY = 0
         if (this.mirroredV) {
@@ -769,13 +795,6 @@ class ImageObject {
     }
 }
 
-function events() {
-
-}
-
-var rSlope = 2
-var rIntercet = 0
-
 rectangle = new Rect(10, 10, 100, 100, {color: "#ff751a"})
 polygon = new Poly([[100, 100], [150, 150], [100, 200], [50, 150]], {color: "#32CD32"})
 polygon.scale(...polygon.center.array, 2)
@@ -783,7 +802,7 @@ line = new Line([0, rIntercet], [2000, 2000*rSlope + rIntercet], {color: "#0000F
 line2 = new Line([0, 0], [500, 500], {color: "#0000FF"})
 side = new NonPoly([[10, 10], [50, 10], new Ellipse(50, 55, 20, 45, 0, 0, Math.PI*2), [50, 100], [10, 100]], {Color: "#FFFFFF"})
 ellipse = new NonPoly([new Ellipse(50, 45, 20, 45, 0, 0, Math.PI*2)])
-circle = new Circle(10, 10, 20, {color: "#ff0000"})
+circle = new Circle(width/2, height/2, 10, {color: "#ff0000"})
 text = new TextObject(5, 10, "Ha Ayuj, you could never display text like I can", 70, {color: "#FFFFFF"})
 roundRect = new RoundRect(0, 0, 100, 50, 25, {color: "#FF0000"})
 
@@ -795,7 +814,7 @@ raisinHeart.onload = () => {
 raisinHeart.src = "https://cdn.discordapp.com/avatars/418893693106389024/aaed638ebdb3bfe2d4e1d3e7f9da62ef.png?size=256"
 
 function transSprite() {
-    return polygon
+    return raisinHeart
 }
 
 background = "#FFFFFF"
@@ -815,7 +834,7 @@ setInterval(() => {
         transSprite().translate(-4, 0)
     }
     if (keys.c) {
-        console.log(rectangle.toPoly())
+        console.log(polygon.points)
     }
     if (rectangle.mouseOn()) {
         rectangle.setScaleWidth(150)
@@ -823,11 +842,13 @@ setInterval(() => {
         rectangle.setScaleWidth(100)
     }
     if (clicked) {
-        polygon.reflect(rSlope, rIntercet)
+        polygon.rotate(width/2, height/2, -90)
     }
     line2.endPoint = mousePos
 
-    line.create()
-    polygon.create()
+    raisinHeart.create()
+    //line.create()
+    //polygon.create()
+    //circle.create()
     end()
 }, INTERVAL*1000)
